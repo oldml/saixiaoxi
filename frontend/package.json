@@ -1,7 +1,7 @@
 {
   "name": "saixiaoxi-frontend",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "Adai",
   "type": "module",
   "scripts": {
@@ -18,7 +18,7 @@
     "vue": "^3.4.0"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^5.0.0",
+    "@vitejs/plugin-vue": "^6.0.1",
     "autoprefixer": "^10.4.17",
     "postcss": "^8.4.33",
     "tailwindcss": "^3.4.0",
