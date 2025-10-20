@@ -77,7 +77,7 @@ function downloadDataUrl(dataUrl: string, filename: string) {
 }
 
 function adjustLayoutForCapture(target: HTMLElement) {
-  const styleSnapshots = new Map<HTMLElement, Partial<Record<StyleKey, string>>>()
+  const originalInlineStyles = new Map<HTMLElement, string | null>()
   const STYLE_PROPERTY_MAP: Record<StyleKey, string> = {
     overflow: 'overflow',
     overflowX: 'overflow-x',
@@ -86,16 +86,16 @@ function adjustLayoutForCapture(target: HTMLElement) {
     height: 'height',
   }
 
+  const rememberStyle = (el: HTMLElement) => {
+    if (!originalInlineStyles.has(el)) {
+      originalInlineStyles.set(el, el.getAttribute('style'))
+    }
+  }
+
   const rememberAndSet = (el: HTMLElement, key: StyleKey, value: string) => {
-    if (!styleSnapshots.has(el)) {
-      styleSnapshots.set(el, {})
-    }
-    const record = styleSnapshots.get(el)!
-    if (!(key in record)) {
-      const property = STYLE_PROPERTY_MAP[key]
-      record[key] = el.style.getPropertyValue(property)
-    }
-    el.style.setProperty(STYLE_PROPERTY_MAP[key], value)
+    rememberStyle(el)
+    const property = STYLE_PROPERTY_MAP[key]
+    el.style.setProperty(property, value)
   }
 
   const restoreOverflow = (el: HTMLElement) => {
@@ -142,17 +142,12 @@ function adjustLayoutForCapture(target: HTMLElement) {
     scrollPositions.forEach(({ element, scrollTop }) => {
       element.scrollTop = scrollTop
     })
-    styleSnapshots.forEach((record, element) => {
-      ;(Object.entries(record) as Array<[StyleKey, string | undefined]>).forEach(
-        ([key, storedValue]) => {
-          const property = STYLE_PROPERTY_MAP[key]
-          if (storedValue && storedValue.length > 0) {
-            element.style.setProperty(property, storedValue)
-          } else {
-            element.style.removeProperty(property)
-          }
-        },
-      )
+    originalInlineStyles.forEach((originalStyle, element) => {
+      if (originalStyle && originalStyle.length > 0) {
+        element.setAttribute('style', originalStyle)
+      } else {
+        element.removeAttribute('style')
+      }
     })
   }
 }
