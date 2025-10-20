@@ -68,6 +68,12 @@ npm run build
 
 ---
 
+## 项目截图
+
+![项目截图](docs/assets/example.png)
+
+---
+
 ## 配置说明
 
 ### 后端配置（`.env`）
