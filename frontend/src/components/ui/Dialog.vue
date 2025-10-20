@@ -29,12 +29,9 @@
       >
         <div
           :class="cn(
-            'relative grid gap-4 border bg-background p-6 shadow-lg rounded-lg max-h-[90vh] overflow-y-auto',
-            'scroll-smooth scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-gray-100',
-            'dark:scrollbar-thumb-gray-600 dark:scrollbar-track-gray-800',
+            'relative grid gap-4 border bg-background p-6 shadow-lg rounded-3xl max-h-[90vh] overflow-hidden',
             props.class
           )"
-          style="scrollbar-width: thin; scrollbar-color: rgb(156 163 175) rgb(243 244 246);"
         >
           <slot />
         </div>
@@ -65,38 +62,3 @@ function handleBackdropClick() {
   emit('close')
 }
 </script>
-
-<style scoped>
-/* Webkit浏览器滚动条样式 */
-.overflow-y-auto::-webkit-scrollbar {
-  width: 8px;
-}
-
-.overflow-y-auto::-webkit-scrollbar-track {
-  background: rgb(243 244 246);
-  border-radius: 4px;
-}
-
-.overflow-y-auto::-webkit-scrollbar-thumb {
-  background: rgb(156 163 175);
-  border-radius: 4px;
-  transition: background 0.2s ease;
-}
-
-.overflow-y-auto::-webkit-scrollbar-thumb:hover {
-  background: rgb(107 114 128);
-}
-
-/* 暗色模式滚动条 */
-.dark .overflow-y-auto::-webkit-scrollbar-track {
-  background: rgb(31 41 55);
-}
-
-.dark .overflow-y-auto::-webkit-scrollbar-thumb {
-  background: rgb(75 85 99);
-}
-
-.dark .overflow-y-auto::-webkit-scrollbar-thumb:hover {
-  background: rgb(107 114 128);
-}
-</style>

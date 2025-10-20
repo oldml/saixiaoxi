@@ -1,5 +1,10 @@
 <template>
-  <div :class="cn('rounded-lg border bg-card text-card-foreground shadow', props.class)">
+  <div
+    :class="cn(
+      'rounded-2xl border border-white/12 bg-white/8 text-slate-100 shadow-[0_18px_50px_rgba(2,6,23,0.4)] backdrop-blur-xl',
+      props.class
+    )"
+  >
     <slot />
   </div>
 </template>
