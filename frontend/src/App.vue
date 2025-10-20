@@ -43,18 +43,7 @@
                 @validation-error="handleValidationError"
               />
 
-              <div class="grid gap-3 sm:grid-cols-3">
-                <div
-                  v-for="tile in highlightTiles"
-                  :key="tile.title"
-                  class="rounded-xl border border-white/10 bg-transparent text-xs uppercase tracking-[0.28em] text-slate-300/70 transition-colors duration-200 hover:border-white/12 hover:shadow-[0_14px_28px_rgba(2,6,23,0.4)]"
-                >
-                  <div class="flex flex-col gap-1.5 px-5 py-4">
-                    <span class="text-[11px] text-slate-300/70">{{ tile.title }}</span>
-                    <span class="text-sm font-semibold tracking-normal text-white">{{ tile.value }}</span>
-                  </div>
-                </div>
-              </div>
+              <HighlightTiles :tiles="highlightTiles" />
 
               <Transition
                 enter-active-class="transition-all duration-300 ease-out"
@@ -97,215 +86,71 @@
       </div>
     </div>
 
-    <Dialog
+    <AccountResultDialog
       v-model:open="dialogOpen"
-      class="rounded-3xl border-white/15 bg-slate-950/80 p-0 text-slate-100 shadow-[0_40px_120px_rgba(2,6,23,0.45)] backdrop-blur-2xl"
+      :query-result="queryResult"
+      :show-user-id="showUserId"
+      :animate-profile="animateProfile"
+      :animate-details="animateDetails"
+      :is-capturing="isCapturing"
       @close="handleCloseDialog"
-    >
-      <div ref="captureTargetRef" class="flex flex-col">
-        <DialogHeader class="border-b border-white/10 bg-white/5 px-8 py-6 backdrop-blur-lg">
-          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <DialogTitle class="text-2xl font-semibold text-white/90">查询结果</DialogTitle>
-            <div class="flex items-center gap-2" data-export-ignore="true">
-              <Button
-                class="rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-medium text-slate-100 transition-colors duration-200 hover:bg-white/16 focus-visible:ring-2 focus-visible:ring-sky-300/70 disabled:cursor-not-allowed"
-                size="sm"
-                :disabled="isCapturing || !queryResult"
-                @click="handleExportSnapshot"
-              >
-                <Loader2 v-if="isCapturing" class="h-4 w-4 animate-spin" />
-                <Download v-else class="h-4 w-4 text-slate-200" />
-                {{ isCapturing ? '生成中...' : '导出截图' }}
-              </Button>
-            </div>
-          </div>
-        </DialogHeader>
-        <DialogContent class="px-8 py-8">
-          <div v-if="queryResult" class="grid gap-6 lg:grid-cols-[320px_1fr] xl:grid-cols-[360px_1fr]">
-            <div class="lg:self-start">
-              <UserProfile
-                :userinfo="queryResult.userinfo"
-                :show-user-id="showUserId"
-                :animate="animateProfile"
-              />
-            </div>
-
-            <div>
-              <UserDetails
-                :userinfo="queryResult.userinfo"
-                :animate="animateDetails"
-              />
-            </div>
-          </div>
-        </DialogContent>
-      </div>
-    </Dialog>
+      @export="handleExportSnapshot"
+      @register-capture-target="registerCaptureTarget"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, nextTick } from 'vue'
+import { computed, onMounted } from 'vue'
 import QueryForm from './components/QueryForm.vue'
-import UserProfile from './components/UserProfile.vue'
-import UserDetails from './components/UserDetails.vue'
+import HighlightTiles from './components/HighlightTiles.vue'
 import Alert from './components/ui/Alert.vue'
-import Button from './components/ui/Button.vue'
-import Dialog from './components/ui/Dialog.vue'
-import DialogHeader from './components/ui/DialogHeader.vue'
-import DialogTitle from './components/ui/DialogTitle.vue'
-import DialogContent from './components/ui/DialogContent.vue'
-import { queryAccount, checkHealth } from './api'
-import type { QueryResponse } from './types'
-import { toPng } from 'html-to-image'
-import { Download, Loader2 } from 'lucide-vue-next'
+import AccountResultDialog from './components/AccountResultDialog.vue'
+import { checkHealth } from './api'
+import { HIGHLIGHT_TILES } from './constants/highlightTiles'
+import { useStatusBanner } from './composables/useStatusBanner'
+import { useAccountQuery } from './composables/useAccountQuery'
+import { useExportSnapshot } from './composables/useExportSnapshot'
 
-const isLoading = ref(false)
-const queryResult = ref<QueryResponse['data'] | null>(null)
-const dialogOpen = ref(false)
-const showUserId = ref(false)
-const animateProfile = ref(false)
-const animateDetails = ref(false)
-const captureTargetRef = ref<HTMLElement | null>(null)
-const isCapturing = ref(false)
+const highlightTiles = HIGHLIGHT_TILES
 
-interface Status {
-  show: boolean
-  message: string
-  type: 'success' | 'error' | 'warning' | 'default'
+const { status, alertTone, showStatus, hideStatus } = useStatusBanner()
+
+const {
+  isLoading,
+  queryResult,
+  dialogOpen,
+  showUserId,
+  animateProfile,
+  animateDetails,
+  handleQuery,
+  handleClear,
+  handleValidationError,
+  handleCloseDialog,
+} = useAccountQuery({ showStatus, hideStatus })
+
+const { captureTargetRef, isCapturing, exportSnapshot } = useExportSnapshot({ showStatus })
+
+const registerCaptureTarget = (element: HTMLElement | null) => {
+  captureTargetRef.value = element
 }
-
-const status = ref<Status>({
-  show: false,
-  message: '',
-  type: 'default',
-})
-
-const highlightTiles = [
-  { title: '合法区间', value: '50000 ~ 2,000,000,000' },
-  { title: '可查询状态', value: '正式服 · 账号档案' },
-  { title: '数据刷新', value: '实时请求 · ~3 秒' },
-]
-
-const alertTone = computed(() => {
-  const base = 'rounded-xl border px-5 py-4 text-sm shadow-[0_10px_40px_rgba(15,23,42,0.35)] backdrop-blur-xl'
-  const map: Record<Status['type'], string> = {
-    default: 'border-white/15 bg-white/10 text-slate-100/90',
-    success: 'border-emerald-400/60 bg-emerald-500/10 text-emerald-100',
-    error: 'border-rose-400/60 bg-rose-500/10 text-rose-100',
-    warning: 'border-amber-300/60 bg-amber-400/10 text-amber-100',
-  }
-  return `${base} ${map[status.value.type]}`
-})
 
 const placeholderState = computed(() => {
   if (queryResult.value) {
     return {
       title: '结果已准备就绪',
-      description: '刚刚完成的账号档案已缓存，可继续检索新的米米号或重新打开弹窗查看详情。'
+      description:
+        '刚刚完成的账号档案已缓存，可继续检索新的米米号或重新打开弹窗查看详情。',
     }
   }
   return {
     title: '等待查询',
-    description: '输入合法的米米号并点击「立即查询」，系统会在此展示战斗记录、精灵数据与账号健康状态。'
+    description:
+      '输入合法的米米号并点击「立即查询」，系统会在此展示战斗记录、精灵数据与账号健康状态。',
   }
 })
 
-let statusTimeout: number | null = null
-
-function showStatus(message: string, type: Status['type'] = 'default', duration = 5000) {
-  if (statusTimeout) {
-    clearTimeout(statusTimeout)
-  }
-
-  status.value = {
-    show: true,
-    message,
-    type,
-  }
-
-  if (duration > 0) {
-    statusTimeout = setTimeout(() => {
-      status.value.show = false
-    }, duration) as unknown as number
-  }
-}
-
-function hideStatus() {
-  status.value.show = false
-  if (statusTimeout) {
-    clearTimeout(statusTimeout)
-    statusTimeout = null
-  }
-}
-
-async function handleQuery(account: string) {
-  isLoading.value = true
-  hideStatus()
-  queryResult.value = null
-  dialogOpen.value = false
-  showUserId.value = false
-  animateProfile.value = false
-  animateDetails.value = false
-
-  try {
-    showStatus('正在查询用户信息...', 'default', 0)
-    const result = await queryAccount(account)
-
-    if (result.success && result.data) {
-      queryResult.value = result.data
-      showStatus('查询成功！', 'success')
-
-      // 打开弹窗
-      dialogOpen.value = true
-
-      // 等待DOM更新后显示内容
-      await nextTick()
-      await new Promise(resolve => setTimeout(resolve, 150))
-
-      // 显示账号ID
-      showUserId.value = true
-
-      // 启动逐条显示动画
-      await nextTick()
-      animateProfile.value = true
-
-      // 延迟启动详情动画
-      setTimeout(() => {
-        animateDetails.value = true
-      }, 200)
-    } else {
-      throw new Error(result.message || '查询失败')
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : '查询失败'
-    showStatus(`查询失败: ${message}`, 'error')
-    console.error('Query error:', error)
-  } finally {
-    isLoading.value = false
-  }
-}
-
-function handleClear() {
-  queryResult.value = null
-  dialogOpen.value = false
-  showUserId.value = false
-  animateProfile.value = false
-  animateDetails.value = false
-  hideStatus()
-}
-
-function handleValidationError(message: string) {
-  showStatus(message, 'error')
-}
-
-function handleCloseDialog() {
-  dialogOpen.value = false
-  showUserId.value = false
-  animateProfile.value = false
-  animateDetails.value = false
-}
-
-function buildExportFileName(): string {
+const buildExportFileName = () => {
   const defaultName = 'saixiaoxi-result.png'
   const userinfo = queryResult.value?.userinfo
   if (!userinfo) {
@@ -316,133 +161,20 @@ function buildExportFileName(): string {
   const sanitizedNick = nick
     .replace(/[<>:"/\\|?*\u0000-\u001F]+/g, '')
     .replace(/\s+/g, '')
-  const suffix = sanitizedNick
-    ? `${sanitizedNick}-${userinfo.userID}`
-    : `${userinfo.userID}`
+  const suffix = sanitizedNick ? `${sanitizedNick}-${userinfo.userID}` : `${userinfo.userID}`
 
   return `saixiaoxi-${suffix}.png`
 }
 
-function downloadDataUrl(dataUrl: string, filename: string) {
-  const link = document.createElement('a')
-  link.href = dataUrl
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-}
-
-type StyleKey = 'overflow' | 'overflowX' | 'overflowY' | 'maxHeight' | 'height'
-
-function adjustLayoutForCapture(target: HTMLElement) {
-  const styleSnapshots = new Map<HTMLElement, Partial<Record<StyleKey, string>>>()
-
-  const rememberAndSet = (el: HTMLElement, key: StyleKey, value: string) => {
-    if (!styleSnapshots.has(el)) {
-      styleSnapshots.set(el, {})
-    }
-    const record = styleSnapshots.get(el)!
-    if (!(key in record)) {
-      record[key] = el.style[key as any]
-    }
-    el.style[key as any] = value
-  }
-
-  const restoreOverflow = (el: HTMLElement) => {
-    rememberAndSet(el, 'overflow', 'visible')
-    rememberAndSet(el, 'overflowX', 'visible')
-    rememberAndSet(el, 'overflowY', 'visible')
-  }
-
-  let ancestor: HTMLElement | null = target
-  while (ancestor && ancestor !== document.body) {
-    const styles = window.getComputedStyle(ancestor)
-    if (styles.overflow !== 'visible' || styles.overflowX !== 'visible' || styles.overflowY !== 'visible') {
-      restoreOverflow(ancestor)
-    }
-    if (styles.maxHeight !== 'none') {
-      rememberAndSet(ancestor, 'maxHeight', 'none')
-    }
-    ancestor = ancestor.parentElement
-  }
-
-  const scrollPositions: Array<{ element: HTMLElement; scrollTop: number }> = []
-  const scrollSelectors = ['.scroll-area', '[data-export-scrollable="true"]']
-  scrollSelectors.forEach(selector => {
-    target.querySelectorAll<HTMLElement>(selector).forEach(element => {
-      scrollPositions.push({ element, scrollTop: element.scrollTop })
-      element.scrollTop = 0
-      restoreOverflow(element)
-      const styles = window.getComputedStyle(element)
-      if (styles.maxHeight !== 'none') {
-        rememberAndSet(element, 'maxHeight', 'none')
-      }
-      if (styles.height !== 'auto' && element.scrollHeight > element.clientHeight) {
-        rememberAndSet(element, 'height', 'auto')
-      }
-    })
-  })
-
-  return () => {
-    scrollPositions.forEach(({ element, scrollTop }) => {
-      element.scrollTop = scrollTop
-    })
-    styleSnapshots.forEach((record, element) => {
-      (Object.keys(record) as StyleKey[]).forEach(key => {
-        const value = record[key]
-        element.style[key as any] = value ?? ''
-      })
-    })
-  }
-}
-
-async function handleExportSnapshot() {
+const handleExportSnapshot = async () => {
   if (!queryResult.value) {
     showStatus('暂无可导出的查询结果', 'warning')
     return
   }
 
-  const target = captureTargetRef.value
-  if (!target) {
-    showStatus('未找到可截图的区域', 'error')
-    return
-  }
-
-  if (isCapturing.value) {
-    return
-  }
-
-  let restoreLayout: (() => void) | null = null
-
-  try {
-    isCapturing.value = true
-    showStatus('正在生成截图...', 'default')
-
-    restoreLayout = adjustLayoutForCapture(target)
-
-    const pixelRatio = Math.min(window.devicePixelRatio || 1, 2)
-    const dataUrl = await toPng(target, {
-      cacheBust: true,
-      backgroundColor: '#020617',
-      pixelRatio,
-      filter: (node) => {
-        if (!(node instanceof HTMLElement)) {
-          return true
-        }
-        return node.dataset.exportIgnore !== 'true'
-      },
-    })
-
-    const filename = buildExportFileName()
-    downloadDataUrl(dataUrl, filename)
-    showStatus('截图已下载，可分享给好友', 'success')
-  } catch (error) {
-    console.error('Export error:', error)
-    showStatus('导出截图失败，请重试', 'error')
-  } finally {
-    restoreLayout?.()
-    isCapturing.value = false
-  }
+  await exportSnapshot({
+    filename: buildExportFileName(),
+  })
 }
 
 onMounted(async () => {
