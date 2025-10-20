@@ -70,7 +70,8 @@ npm run build
 
 ## 项目截图
 
-![项目截图](docs/assets/example.png)
+![主页](docs/assets/example.png)
+![信息查询](docs/assets/saixiaoxi-小赛尔-123456.png)
 
 ---
 
