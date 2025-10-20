@@ -1,7 +1,7 @@
 {
   "name": "saixiaoxi-frontend",
   "private": true,
-  "version": "2.0.0",
+  "version": "2.0.1",
   "author": "Adai",
   "type": "module",
   "scripts": {
@@ -12,6 +12,7 @@
   "dependencies": {
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
+    "html-to-image": "^1.11.13",
     "lucide-vue-next": "^0.344.0",
     "radix-vue": "^1.9.0",
     "tailwind-merge": "^2.2.0",

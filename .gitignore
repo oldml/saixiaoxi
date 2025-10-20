@@ -31,6 +31,7 @@ env/
 
 # uv
 .uv/
+backend/uv.lock
 
 # IDE
 .vscode/
@@ -79,6 +80,7 @@ node_modules/
 frontend/dist/
 frontend/.env.local
 frontend/.env.production
+frontend/package-lock.json
 
 # Project specific
 验证码.bmp

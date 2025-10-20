@@ -81,27 +81,43 @@
       class="rounded-3xl border-white/15 bg-slate-950/80 p-0 text-slate-100 shadow-[0_40px_120px_rgba(2,6,23,0.45)] backdrop-blur-2xl"
       @close="handleCloseDialog"
     >
-      <DialogHeader class="border-b border-white/10 bg-white/5 px-8 py-6 backdrop-blur-lg">
-        <DialogTitle class="text-2xl font-semibold text-white/90">查询结果</DialogTitle>
-      </DialogHeader>
-      <DialogContent class="px-8 py-8">
-        <div v-if="queryResult" class="grid gap-6 lg:grid-cols-[320px_1fr] xl:grid-cols-[360px_1fr]">
-          <div class="lg:self-start">
-            <UserProfile
-              :userinfo="queryResult.userinfo"
-              :show-user-id="showUserId"
-              :animate="animateProfile"
-            />
+      <div ref="captureTargetRef" class="flex flex-col">
+        <DialogHeader class="border-b border-white/10 bg-white/5 px-8 py-6 backdrop-blur-lg">
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <DialogTitle class="text-2xl font-semibold text-white/90">查询结果</DialogTitle>
+            <div class="flex items-center gap-2" data-export-ignore="true">
+              <Button
+                class="rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-medium text-slate-100 transition-colors duration-200 hover:bg-white/16 focus-visible:ring-2 focus-visible:ring-sky-300/70 disabled:cursor-not-allowed"
+                size="sm"
+                :disabled="isCapturing || !queryResult"
+                @click="handleExportSnapshot"
+              >
+                <Loader2 v-if="isCapturing" class="h-4 w-4 animate-spin" />
+                <Download v-else class="h-4 w-4 text-slate-200" />
+                {{ isCapturing ? '生成中...' : '导出截图' }}
+              </Button>
+            </div>
           </div>
+        </DialogHeader>
+        <DialogContent class="px-8 py-8">
+          <div v-if="queryResult" class="grid gap-6 lg:grid-cols-[320px_1fr] xl:grid-cols-[360px_1fr]">
+            <div class="lg:self-start">
+              <UserProfile
+                :userinfo="queryResult.userinfo"
+                :show-user-id="showUserId"
+                :animate="animateProfile"
+              />
+            </div>
 
-          <div>
-            <UserDetails
-              :userinfo="queryResult.userinfo"
-              :animate="animateDetails"
-            />
+            <div>
+              <UserDetails
+                :userinfo="queryResult.userinfo"
+                :animate="animateDetails"
+              />
+            </div>
           </div>
-        </div>
-      </DialogContent>
+        </DialogContent>
+      </div>
     </Dialog>
   </div>
 </template>
@@ -112,12 +128,15 @@ import QueryForm from './components/QueryForm.vue'
 import UserProfile from './components/UserProfile.vue'
 import UserDetails from './components/UserDetails.vue'
 import Alert from './components/ui/Alert.vue'
+import Button from './components/ui/Button.vue'
 import Dialog from './components/ui/Dialog.vue'
 import DialogHeader from './components/ui/DialogHeader.vue'
 import DialogTitle from './components/ui/DialogTitle.vue'
 import DialogContent from './components/ui/DialogContent.vue'
 import { queryAccount, checkHealth } from './api'
 import type { QueryResponse } from './types'
+import { toPng } from 'html-to-image'
+import { Download, Loader2 } from 'lucide-vue-next'
 
 const isLoading = ref(false)
 const queryResult = ref<QueryResponse['data'] | null>(null)
@@ -125,6 +144,8 @@ const dialogOpen = ref(false)
 const showUserId = ref(false)
 const animateProfile = ref(false)
 const animateDetails = ref(false)
+const captureTargetRef = ref<HTMLElement | null>(null)
+const isCapturing = ref(false)
 
 interface Status {
   show: boolean
@@ -261,6 +282,146 @@ function handleCloseDialog() {
   showUserId.value = false
   animateProfile.value = false
   animateDetails.value = false
+}
+
+function buildExportFileName(): string {
+  const defaultName = 'saixiaoxi-result.png'
+  const userinfo = queryResult.value?.userinfo
+  if (!userinfo) {
+    return defaultName
+  }
+
+  const nick = (userinfo.nick || '').trim()
+  const sanitizedNick = nick
+    .replace(/[<>:"/\\|?*\u0000-\u001F]+/g, '')
+    .replace(/\s+/g, '')
+  const suffix = sanitizedNick
+    ? `${sanitizedNick}-${userinfo.userID}`
+    : `${userinfo.userID}`
+
+  return `saixiaoxi-${suffix}.png`
+}
+
+function downloadDataUrl(dataUrl: string, filename: string) {
+  const link = document.createElement('a')
+  link.href = dataUrl
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
+type StyleKey = 'overflow' | 'overflowX' | 'overflowY' | 'maxHeight' | 'height'
+
+function adjustLayoutForCapture(target: HTMLElement) {
+  const styleSnapshots = new Map<HTMLElement, Partial<Record<StyleKey, string>>>()
+
+  const rememberAndSet = (el: HTMLElement, key: StyleKey, value: string) => {
+    if (!styleSnapshots.has(el)) {
+      styleSnapshots.set(el, {})
+    }
+    const record = styleSnapshots.get(el)!
+    if (!(key in record)) {
+      record[key] = el.style[key as any]
+    }
+    el.style[key as any] = value
+  }
+
+  const restoreOverflow = (el: HTMLElement) => {
+    rememberAndSet(el, 'overflow', 'visible')
+    rememberAndSet(el, 'overflowX', 'visible')
+    rememberAndSet(el, 'overflowY', 'visible')
+  }
+
+  let ancestor: HTMLElement | null = target
+  while (ancestor && ancestor !== document.body) {
+    const styles = window.getComputedStyle(ancestor)
+    if (styles.overflow !== 'visible' || styles.overflowX !== 'visible' || styles.overflowY !== 'visible') {
+      restoreOverflow(ancestor)
+    }
+    if (styles.maxHeight !== 'none') {
+      rememberAndSet(ancestor, 'maxHeight', 'none')
+    }
+    ancestor = ancestor.parentElement
+  }
+
+  const scrollPositions: Array<{ element: HTMLElement; scrollTop: number }> = []
+  const scrollSelectors = ['.scroll-area', '[data-export-scrollable="true"]']
+  scrollSelectors.forEach(selector => {
+    target.querySelectorAll<HTMLElement>(selector).forEach(element => {
+      scrollPositions.push({ element, scrollTop: element.scrollTop })
+      element.scrollTop = 0
+      restoreOverflow(element)
+      const styles = window.getComputedStyle(element)
+      if (styles.maxHeight !== 'none') {
+        rememberAndSet(element, 'maxHeight', 'none')
+      }
+      if (styles.height !== 'auto' && element.scrollHeight > element.clientHeight) {
+        rememberAndSet(element, 'height', 'auto')
+      }
+    })
+  })
+
+  return () => {
+    scrollPositions.forEach(({ element, scrollTop }) => {
+      element.scrollTop = scrollTop
+    })
+    styleSnapshots.forEach((record, element) => {
+      (Object.keys(record) as StyleKey[]).forEach(key => {
+        const value = record[key]
+        element.style[key as any] = value ?? ''
+      })
+    })
+  }
+}
+
+async function handleExportSnapshot() {
+  if (!queryResult.value) {
+    showStatus('暂无可导出的查询结果', 'warning')
+    return
+  }
+
+  const target = captureTargetRef.value
+  if (!target) {
+    showStatus('未找到可截图的区域', 'error')
+    return
+  }
+
+  if (isCapturing.value) {
+    return
+  }
+
+  let restoreLayout: (() => void) | null = null
+
+  try {
+    isCapturing.value = true
+    showStatus('正在生成截图...', 'default')
+
+    restoreLayout = adjustLayoutForCapture(target)
+
+    const pixelRatio = Math.min(window.devicePixelRatio || 1, 2)
+    const dataUrl = await toPng(target, {
+      cacheBust: true,
+      backgroundColor: '#020617',
+      pixelRatio,
+      filter: (node) => {
+        if (!(node instanceof HTMLElement)) {
+          return true
+        }
+        return node.dataset.exportIgnore !== 'true'
+      },
+    })
+
+    const filename = buildExportFileName()
+    downloadDataUrl(dataUrl, filename)
+    showStatus('截图已下载，可分享给好友', 'success')
+  } catch (error) {
+    console.error('Export error:', error)
+    showStatus('导出截图失败，请重试', 'error')
+  } finally {
+    restoreLayout?.()
+    isCapturing.value = false
+  }
 }
 
 onMounted(async () => {
